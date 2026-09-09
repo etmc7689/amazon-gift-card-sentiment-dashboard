@@ -1,0 +1,10 @@
+# Raw Amazon review data is large; download it, don't commit it (see README).
+data/Gift_Cards.jsonl
+data/Gift_Cards.jsonl.gz
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
