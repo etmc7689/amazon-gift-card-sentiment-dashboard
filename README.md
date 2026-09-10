@@ -80,6 +80,10 @@ root. It shows:
 - **Interactive review explorer** — filter the 120-sample table by
   correct/mismatch, ground-truth class, predicted class, LLM emotion,
   word-list emotion, or free text, with a live count.
+- **Fitted vs residual** — the table exposes each review's **fitted**
+  (predicted) class and a **residual** flag (`0` = fit matched the observed
+  label, `1` = error); a "Residuals (classification errors)" chart breaks the
+  errors down by observed class.
 
 ### Key figures (balanced 3-class sample, 120 reviews)
 
@@ -121,6 +125,10 @@ contributes the same weight, the random-chance baseline drops to **33.3%**,
 and the balanced accuracy (75.8%) reflects how well the model actually handles
 each class rather than how big the majority class is. The balancing is what
 surfaced that neutrals are handled poorly — a fact a lopsided run hides.
+
+A one-sided exact binomial test (91/120 correct, vs. the 1/3 chance that a
+guessing model would achieve) gives **p ≈ 2×10⁻²¹ (p < 0.05)**, formally
+confirming the model performs far above chance on the balanced sample.
 
 ### Q2. Where do the model's mistakes go?
 

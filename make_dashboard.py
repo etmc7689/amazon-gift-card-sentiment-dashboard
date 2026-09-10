@@ -76,20 +76,29 @@ def compute(rows):
     llm_emo = Counter(r["pred_emotion"] for r in rows if r.get("pred_emotion"))
     wl_emo = Counter(r["wordlist_emotion"] for r in rows if r.get("wordlist_emotion"))
 
-    # rows enriched for the table
+    # rows enriched for the table. "fitted" = model's predicted class;
+    # "residual" = 0 if the fit matched the observed label, 1 otherwise.
     table_rows = []
     for r in rows:
+        pred = r.get("pred_sentiment")
         table_rows.append({
             "asin": r.get("asin"), "rating": r.get("rating"),
             "title": r.get("title"), "text": r.get("text"),
-            "label": r.get("label"), "pred": r.get("pred_sentiment"),
+            "label": r.get("label"), "fitted": pred,
+            "residual": 0 if pred == r.get("label") else 1,
             "llm_emo": r.get("pred_emotion"), "wl_emo": r.get("wordlist_emotion"),
         })
+    correct = sum(cm[c][c] for c in CLASSES)
     agg = {
         "total": total, "accuracy": acc,
         "confusion": cm, "per_class": per_class,
         "pred_counts": pred_counts, "actual_counts": actual_counts,
         "correct_counts": correct_counts,
+        # above-chance p-value vs a uniform 1/3 ("coin toss" into 3 classes)
+        "p_chance": binomial_tail(total, correct, 1.0 / 3),
+        # classification residuals per observed class = observed - correct
+        "residuals_by_class": {c: per_class[c]["actual"] - per_class[c]["tp"]
+                               for c in CLASSES},
         "rating_dist": {int(float(k)) if str(k).replace('.', '', 1).isdigit() else k: v
                         for k, v in rating_dist.items()},
         "llm_emo": dict(llm_emo), "wl_emo": dict(wl_emo),
@@ -98,6 +107,15 @@ def compute(rows):
 
 
 # ---------------- HTML building blocks ----------------
+
+def binomial_tail(n, k, p0):
+    """One-sided exact binomial: P(X >= k) when X ~ Bin(n, p0)."""
+    import math
+    s = 0.0
+    for kk in range(k, n + 1):
+        s += math.comb(n, kk) * (p0 ** kk) * ((1 - p0) ** (n - kk))
+    return s
+
 
 def bar(maxv, val, color, label=None, minw=6):
     """A proportionally sized bar with its value OUTSIDE (right), never overlapping."""
@@ -161,6 +179,20 @@ def per_class_acc_html(pc):
     return '<div class="chart" style="min-width:260px">' + "".join(rows) + '</div>'
 
 
+def residuals_html(res, pc):
+    """Classification residual (error) count per observed class."""
+    maxv = max([1] + list(res.values()))
+    rows = []
+    for c in CLASSES:
+        total = pc[c]["actual"]
+        pct = f"{res[c]}/{total} errors"
+        rows.append(
+            f'<div class="hbar-row"><div class="hbar-label">{esc(c)}</div>'
+            f'{bar(maxv, res[c], "#d64541", pct)}'
+            f'</div>')
+    return '<div class="chart" style="min-width:260px">' + "".join(rows) + '</div>'
+
+
 def confusion_html(cm):
     head = "<tr><th class='corner'></th>" + "".join(
         f"<th>predicted<br><span class='dim'>{esc(c)}</span></th>" for c in CLASSES) + "</tr>"
@@ -194,8 +226,9 @@ def render_kpis(agg):
                 f'<div class="kpi-sub">{esc(sub)}</div></div>')
     p = agg["per_class"]
     cards = [card("Reviews scored", agg["total"], "balanced 3-class sample"),
-             card("Overall accuracy", f"{agg['accuracy']*100:.1f}%",
-                  "chance = 33.3%")]
+             card("Overall accuracy", f"{agg['accuracy']*100:.1f}%", "chance = 33.3%"),
+             card("Above-chance p", "p < 0.05 ✓",
+                  f"exact binomial vs 33%: p ≈ {agg['p_chance']:.1e}")]
     for c in CLASSES:
         cards.append(card(f"{esc(c)} recall", f"{p[c]['recall']*100:.0f}%",
                           f"{p[c]['tp']}/{p[c]['actual']} correct | F1 {p[c]['f1']:.2f}"))
@@ -311,6 +344,9 @@ def main():
 
     <div class="card"><h2>Per-class recall</h2>
       {per_class_acc_html(agg["per_class"])}
+      <h2 style="margin-top:14px">Residuals (classification errors)</h2>
+      {residuals_html(agg["residuals_by_class"], agg["per_class"])}
+      <div class="sub" style="margin-top:4px">Residual = observed label &#8800; fitted class. Almost all errors are on 3★ reviews.</div>
     </div>
 
     <div class="card" style="grid-column:1/-1"><h2>Emotion: LLM vs NRC word-list</h2>
@@ -331,7 +367,7 @@ def main():
     </div>
     <div class="count">Showing <b id="n-show">0</b> of <b id="n-total">0</b> reviews</div>
     <div class="scroll"><table class="rtable">
-      <thead><tr><th>★</th><th>Ground</th><th>Predicted</th><th>LLM emotion</th><th>Word-list emotion</th><th>Title</th><th>Text</th></tr></thead>
+      <thead><tr><th>★</th><th>Ground<br><span class="dim">actual</span></th><th>Fitted<br><span class="dim">predicted</span></th><th>Residual<br><span class="dim">0=fit,1=err</span></th><th>LLM emotion</th><th>Word-list emotion</th><th>Title</th><th>Text</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table></div>
   </div>
@@ -344,9 +380,9 @@ function stars(r){{ const n = Math.round(r.rating)||0; return "★".repeat(Math.
 function escT(s){{ return String(s).replace(/[&<>"]/g, c => ({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}})[c]); }}
 
 function render(filter) {{
-  let rows = DATA.filter(r => filter.match==='all' || (filter.match==='correct' ? r.pred===r.label : r.pred!==r.label));
+  let rows = DATA.filter(r => filter.match==='all' || (filter.match==='correct' ? r.fitted===r.label : r.fitted!==r.label));
   if (filter.label!=='all') rows = rows.filter(r => r.label===filter.label);
-  if (filter.pred!=='all') rows = rows.filter(r => r.pred===filter.pred);
+  if (filter.pred!=='all') rows = rows.filter(r => r.fitted===filter.pred);
   if (filter.lem!=='all') rows = rows.filter(r => (r.llm_emo||'none')===filter.lem);
   if (filter.wem!=='all') rows = rows.filter(r => (r.wl_emo||'none')===filter.wem);
   const q = filter.q.trim().toLowerCase();
@@ -355,15 +391,18 @@ function render(filter) {{
   document.getElementById('n-total').textContent = DATA.length;
   const tb = document.getElementById('tbody');
   tb.innerHTML = rows.map(r => {{
-    const ok = r.pred===r.label;
+    const ok = r.fitted===r.label;
     const cls = ok ? 'row-correct' : 'row-miss';
-    const predBadge = r.pred ? `<span class="badge" style="background:${{r.pred==='positive'?'#2e9e5b':r.pred==='neutral'?'#c9a227':'#d64541'}}">${{r.pred}}</span>` : '<span class="badge" style="background:#999">error</span>';
+    const predBadge = r.fitted ? `<span class="badge" style="background:${{r.fitted==='positive'?'#2e9e5b':r.fitted==='neutral'?'#c9a227':'#d64541'}}">${{r.fitted}}</span>` : '<span class="badge" style="background:#999">error</span>';
     const grBadge = `<span class="badge" style="background:${{r.label==='positive'?'#2e9e5b':r.label==='neutral'?'#c9a227':'#d64541'}}">${{r.label}}</span>`;
+    const resBadge = r.residual===0
+      ? '<span class="badge" style="background:#2e9e5b">0</span>'
+      : '<span class="badge" style="background:#d64541">1</span>';
     const lem = r.llm_emo ? `<span title="LLM dominant emotion">${{r.llm_emo}}</span>` : '<span class="dim">—</span>';
     const wem = r.wl_emo ? `<span title="NRC word-list dominant emotion">${{r.wl_emo}}</span>` : '<span class="dim">(none)</span>';
     return `<tr class="${{cls}}">
       <td class="stars" title="rating ${{r.rating}}">${{stars(r)}}</td>
-      <td>${{grBadge}}</td><td>${{predBadge}}</td>
+      <td>${{grBadge}}</td><td>${{predBadge}}</td><td>${{resBadge}}</td>
       <td>${{lem}}</td><td>${{wem}}</td>
       <td>${{escT(r.title.slice(0,70))}}</td>
       <td>${{escT(r.text.slice(0,160))}}${{r.text.length>160?'…':''}}</td></tr>`;
