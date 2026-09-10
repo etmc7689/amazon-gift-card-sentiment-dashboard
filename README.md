@@ -63,8 +63,13 @@ One balanced run's raw output is committed at
 
 ## The dashboard
 
+The dashboard is served **live** on GitHub Pages (no install or server needed):
+
+**https://etmc7689.github.io/amazon-gift-card-sentiment-dashboard/**
+
 `dashboard.html` opens in any browser with no network access (fully
-self-contained). It shows:
+self-contained); `index.html` is an identical copy that Pages serves at the
+root. It shows:
 
 - **Star-rating distribution** of the full 152,410-review dataset.
 - **Correct answer vs predicted, per class** — how many of each class the
@@ -193,12 +198,16 @@ why literal bag-of-words emotion detection diverges from contextual reading.
    (`"<\\/"` escaping), a nested-quote error, and a leftover placeholder.
    **Fix:** precompute the escaped JSON outside the template and drop the
    unused placeholders.
-6. **Layout robustness (assignment requirement).** To guard against the
-   classic "tiny bar collapses to zero width" bug, every chart bar uses
-   `width: max(<pct>, 6px)` — a minimum visible width — and each bar carries
-   its numeric value label, so zero/small counts still render legibly. verified
-   by opening the page in a browser and comparing on-page counts to the saved
-   JSONL.
+6. **Layout bugs (assignment concern: small chart elements).** Two issues were
+   caught and fixed after the first render. (a) The classic "tiny bar collapses
+   to zero width" problem: every bar uses `width: max(<pct>, 4px)` above a
+   light track, so even near-zero counts still show. (b) The **star-rating**
+   chart originally overlaid its count *inside* the bar, so the very short 1–3★
+   bars overflowed and the numbers overlapped the axis. **Fix:** each count now
+   sits in a fixed-width, right-aligned column (`bar-num`) beside the bar
+   track, so a label can never collide with a bar. Verified present on the page
+   by rendering in a headless browser: 0 zero-width bars, 0 overlaps, no
+   horizontal scroll, and the on-page counts match the saved JSONL.
 
 ---
 
