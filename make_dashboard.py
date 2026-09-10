@@ -100,12 +100,13 @@ def compute(rows):
 # ---------------- HTML building blocks ----------------
 
 def bar(maxv, val, color, label=None, minw=6):
-    """A proportionally sized bar that never collapses to zero width."""
+    """A proportionally sized bar with its value OUTSIDE (right), never overlapping."""
     ratio = (val / maxv) if maxv else 0
     width = f"max({ratio*100:.1f}%, {minw}px)"
-    return (f'<div class="bar-wrap"><div class="bar" style="width:{width};'
-            f'background:{color}"><span class="bar-val">{val}</span></div>'
-            f'<div class="bar-label">{esc(label) if label else ""}</div></div>')
+    num = label if label is not None else val
+    return (f'<div class="bar-line"><div class="bar-track">'
+            f'<div class="bar" style="width:{width};background:{color}"></div></div>'
+            f'<div class="bar-num">{num}</div></div>')
 
 
 def star_dist_html(dist):
@@ -240,12 +241,12 @@ def main():
   .kpi-value{{ font-size:24px; font-weight:700; margin:4px 0; }}
   .kpi-sub{{ font-size:11px; color:var(--muted); }}
   .chart{{ margin-top:6px; }}
-  .hbar-row,.group-row{{ display:flex; align-items:center; margin:7px 0; }}
+  .hbar-row,.group-row{{ display:flex; align-items:center; margin:7px 0; gap:10px; }}
   .hbar-label,.group-label{{ width:110px; font-size:13px; text-transform:capitalize; flex:none; }}
-  .bar-wrap{{ flex:1; height:26px; position:relative; }}
-  .bar{{ height:22px; border-radius:4px; min-width:4px; position:relative; margin-bottom:2px; }}
-  .bar-val{{ position:absolute; right:6px; top:1px; font-size:11px; color:#fff; font-weight:700; text-shadow:0 1px 2px rgba(0,0,0,.4); }}
-  .bar-label{{ font-size:10px; color:var(--muted); }}
+  .bar-line{{ flex:1; display:flex; align-items:center; gap:8px; min-width:0; }}
+  .bar-track{{ flex:1; height:20px; background:#eef0f3; border-radius:4px; min-width:0; overflow:hidden; }}
+  .bar{{ height:100%; border-radius:4px; min-width:4px; }}
+  .bar-num{{ width:64px; text-align:right; font-size:12px; color:var(--fg); font-weight:600; flex:none; font-variant-numeric:tabular-nums; }}
   .group-row{{ align-items:center; }}
   .group-bars{{ flex:1; }}
   .gbar-lbl{{ font-size:10px; color:var(--muted); margin:2px 0 1px; }}
